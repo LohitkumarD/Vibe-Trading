@@ -1,6 +1,6 @@
 # Prop-Firm Forex Bot: Master Plan
 
-Status: draft v1 (2026-11-21). This is the plan the code will follow. Nothing here is financial or legal advice.
+Status: draft v2 (2026-11-21, zero-cost hosting). This is the plan the code will follow. Nothing here is financial or legal advice.
 
 ## 1. Goal
 
@@ -16,15 +16,41 @@ Build an automated forex trading system that can **pass and keep** funded (prop-
 |---|---|---|
 | Platform | **MetaTrader 5 (MT5)** | Offered by almost every prop firm. FTMO, The5ers and others allow EAs on MT5. FundedNext does **not** allow automated trading on cTrader or Match-Trader. |
 | Language | **MQL5 Expert Advisor (EA)** | It runs inside the MT5 terminal with no external bridge. That keeps latency low, removes extra moving parts, and stays inside what firms accept. Python is used only offline for research. |
-| Where it runs | **Windows VPS, 24/5**, located near the broker's servers (London or New York) | MT5 mobile apps **cannot run EAs** (Android/iOS run only manual trading). A laptop that sleeps, reboots or loses Wi-Fi would leave trades unmanaged. A VPS costs about $10–30 per month. |
-| Phone / tablet / laptop | **Control and monitor only** (see section 4) | The bot lives on the VPS, and every device is a window into it. |
+| Where it runs | **₹0 hosting** (see section 2a): your own Windows laptop while we build and demo-test, then a **free-tier Azure Windows VM** (12 months free) for live challenges | MT5 mobile apps **cannot run EAs** (Android/iOS run only manual trading), so something running Windows/MT5 must stay on. A paid VPS (about $10–30/month) becomes an option only once payouts can cover it. |
+| Phone / tablet / laptop | **Control and monitor only** (see section 4) | The bot lives on one host (laptop or free cloud VM), and every device is a window into it. |
+| MCP tools | **Not for live trading. Maybe later for read-only reports** (see section 2b) | MT5 MCP servers still need a running MT5 terminal, so they don't remove the hosting need, and an AI in the order path adds risk and possible rule issues. |
 | Web-hosted service (e.g. a cloud MT5 API) | **Not in v1** | It adds monthly cost and a third party holding your login. Some firms ban external cloud copiers or bridges. We can revisit it for a web dashboard later. |
 | Telegram bot | **Not inside the EA** | FundedNext explicitly bans EAs that connect to Telegram or WhatsApp. We use MT5's native push notifications instead, which every firm accepts. |
+
+## 2a. Running it without paying for a VPS
+
+| Option | Cost | Reliability | Verdict |
+|---|---|---|---|
+| **Your Windows laptop**, plugged in, sleep off | ₹0 | Good enough for M15/H1 strategies. Risks: power cuts, Wi-Fi drops, Windows Update restarts. | **Use for phases 1–4** (build, backtest, demo). |
+| **Azure free account**: 750 hrs/month of a B1s Windows VM for 12 months (+ $200 credit for 30 days) | ₹0 for 12 months | Data-centre power and network, 24/5. Small machine (1 vCPU, 1 GB RAM), so one MT5 terminal with 1–3 charts only. | **Use for live challenges.** Pick a UK/EU region near the broker. |
+| AWS free plan (up to $200 credits) | ₹0 for up to 6 months | Fine, but Windows uses credits faster and the plan ends at 6 months or when credits run out. | Backup if Azure is not available. |
+| Oracle Cloud Always Free + Linux + Wine | ₹0 forever | MT5 runs on Linux via Wine (MetaQuotes publishes an installer), but recent Wine versions have reported glitches, and the free AMD VM has 1 GB RAM. | Fallback after Azure's 12 months end. |
+| Broker "free VPS" (e.g. FXCC) | Needs $2,500 equity + 30 lots/month | Not available for prop-firm accounts. | Not applicable. |
+| MQL5 Virtual Hosting / commercial VPS | $10–30/month | Best | Only once payouts pay for it. |
+
+**Why a laptop outage is survivable:** every trade has its stop-loss and take-profit stored on the broker's server, so a dropped laptop cannot make a loss bigger than planned. The EA restores its daily state from a file when it restarts.
+
+**Laptop setup rules (phase 4 guide will cover these):** Power plan "Never sleep" on AC, lid close = do nothing; Windows Update active hours set to the trading window and restarts paused during challenges; MT5 in the Startup folder with "Allow algo trading" on; router on a small UPS if possible; push alert if the EA heartbeat stops (MT5 mobile shows the terminal as offline).
+
+**Trading hours vs India time:** London open is about 12:30–13:30 IST and the New York overlap is about 18:30–21:30 IST, so the laptop mainly needs to be on in the afternoon and evening. Strategy A trades only in that window. Positions held overnight are protected by their server-side stops.
+
+## 2b. MCP tools (can Claude run or watch the bot?)
+
+There are community MCP servers for MetaTrader 5 (e.g. `metatrader-mcp-server`, `mcp-metatrader5-server` on PyPI). They wrap the `MetaTrader5` Python package so an AI assistant can read the account and place orders.
+
+- They **do not remove the hosting need**: they only work while a Windows MT5 terminal is running on the same machine.
+- **Not for live trading**: an AI deciding or sending orders is slow, can behave unpredictably, and may count as an external bridge or third-party tool under a firm's rules. The bot's risk rules must be deterministic.
+- **Possible later use (phase 5, demo first):** read-only questions from your phone such as "how is the account today?", plus weekly trade-log analysis. Unofficial projects, so they need a code review before use.
 
 ## 3. Architecture
 
 ```
-            ┌──────────────────── Windows VPS (24/5) ────────────────────┐
+            ┌──────── Host: your laptop → free Azure VM (24/5) ─────────┐
             │  MT5 terminal (prop firm login)                            │
             │   └─ PropGuard EA                                          │
             │        ├─ RuleProfile   (firm limits: DD, reset time …)    │
@@ -48,9 +74,9 @@ Design rules:
 | Need | How |
 |---|---|
 | See balance, equity, open trades | Official MT5 app (Android/iOS) logged into the same account (read-only investor password is enough) |
-| Get alerts (trade opened/closed, daily limit near, EA paused, VPS restarted) | EA calls MT5 `SendNotification()` to your **MetaQuotes ID** (shown in the MT5 mobile app). Free, native and firm-safe. |
-| Emergency stop | (a) Close positions in the MT5 app. The EA detects manual closes and pauses for the day. (b) Microsoft Remote Desktop / Windows App on phone, tablet or laptop → VPS → click "Pause" on the EA panel. |
-| Change settings, update the EA | Laptop: edit in MetaEditor, test, then copy to the VPS over RDP. |
+| Get alerts (trade opened/closed, daily limit near, EA paused, host restarted) | EA calls MT5 `SendNotification()` to your **MetaQuotes ID** (shown in the MT5 mobile app). Free, native and firm-safe. |
+| Emergency stop | (a) Close positions in the MT5 app. The EA detects manual closes and pauses for the day. (b) Microsoft Remote Desktop / Windows App on phone, tablet or laptop → host → click "Pause" on the EA panel. |
+| Change settings, update the EA | Laptop: edit in MetaEditor, test, then copy to the host over RDP (no copy needed when the host is the laptop itself). |
 | Later (phase 5): web dashboard | A read-only status page fed from the EA's own log/heartbeat file, after checking the chosen firm's rules on external tools. |
 
 ## 5. Prop-firm risk engine (the core of the project)
@@ -103,7 +129,7 @@ We start with **A and B**. Strategies with low correlation smooth daily equity, 
 2. **Walk-forward**: optimise on one period, then test on the next unseen period. Keep only settings that are stable across neighbours (no single "magic" values).
 3. **Prop simulation**: replay the trades through the RuleProfile. Use Monte Carlo (shuffle trade order, 5,000 runs) to estimate the **probability of breaching the daily or max limit** and of reaching the target within 30/60 days.
 4. **Acceptance bar**: profit factor above 1.3, breach probability under 5%, worst day under 50% of the daily limit, at least 200 trades in the test.
-5. **Forward test** on a demo account for at least 4 weeks on the VPS, then on a free trial or the cheapest challenge.
+5. **Forward test** on a demo account for at least 4 weeks on the host, then on a free trial or the cheapest challenge.
 
 ## 7. Repository layout (target)
 
@@ -116,7 +142,7 @@ mql5/
     Strategies/LondonBreakout.mqh  Strategies/TrendPullback.mqh
 profiles/            # one .set/.json per firm/account type
 research/            # Python: trade-log analysis, Monte Carlo, prop simulation
-docs/                # this plan, VPS setup guide, runbook
+docs/                # this plan, laptop + free-VM setup guides, runbook
 ```
 
 ## 8. Roadmap
@@ -127,7 +153,7 @@ docs/                # this plan, VPS setup guide, runbook
 | 1 | **RiskGuard + RuleProfile + StateStore + Notifier** with a dummy strategy | Strategy Tester shows it flattening and locking at the internal limits, with the correct reset time per firm |
 | 2 | Strategy A (London breakout) + backtest report | Passes the 6.1 bar or is dropped |
 | 3 | Strategy B (trend pullback) + combined portfolio test | Monte Carlo breach probability under 5% |
-| 4 | VPS setup guide + 4-week demo forward test | Live demo results match the backtest within reason |
+| 4 | Laptop setup guide + 4-week demo forward test on the laptop; Azure free VM guide ready | Live demo results match the backtest within reason |
 | 5 | Challenge attempt, and optionally a read-only web dashboard | Challenge passed without coming near a limit |
 
 ## 9. Important: India-specific legal note
@@ -140,7 +166,7 @@ The software is firm-agnostic. Choosing a firm is a separate decision.
 
 ## 10. Open items for Lohit (not blocking phase 1)
 - Which firm and account size to target first. My default is the FTMO 2-step profile, because FTMO allows EAs on all account sizes, but see section 9.
-- VPS budget (about $10–30 per month), to be bought when phase 4 starts.
+- Nothing to pay for hosting. When we reach the challenge, you sign up for the Azure free account (needs a debit/credit card for identity checks, with a small refundable hold).
 - Your MetaQuotes ID (from the MT5 mobile app → Settings → Messages) for push alerts.
 
 ## Sources
@@ -150,3 +176,8 @@ The software is firm-agnostic. Choosing a firm is a separate decision.
 - MT5 mobile does not run EAs: https://www.mql5.com/en/blogs/post/777309
 - Static vs trailing max drawdown (OANDA prop): https://proptrader-help.oanda.com/what-is-maximum-drawdown-and-how-is-it-calculated
 - RBI alert list adds prop firms (Oct 2024): https://www.financemagnates.com/forex/two-prop-firms-and-thinkmarkets-added-to-indias-central-bank-warning-list/
+- Azure free account: https://azure.microsoft.com/en-us/pricing/purchase-options/azure-account
+- AWS free plan (Jul 2025): https://aws.amazon.com/about-aws/whats-new/2025/07/aws-free-tier-credits-month-free-plan
+- MT5 on Linux via Wine (MetaQuotes): https://www.mql5.com/en/articles/625
+- FXCC free VPS conditions: https://www.daytrading.com/promos/sign-up-with-fxcc-to-use-their-free-forex-vps-service
+- MetaTrader MCP server example: https://pypi.org/project/metatrader-mcp-server/

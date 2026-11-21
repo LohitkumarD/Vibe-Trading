@@ -2,7 +2,7 @@
 
 An automated forex trading system for **funded (prop-firm) accounts**, built as an MT5 Expert Advisor with a strict prop-rule risk engine.
 
-- Runs 24/5 on a Windows VPS in MetaTrader 5
+- Runs in MetaTrader 5 on your own laptop or a free-tier cloud VM (no paid VPS)
 - Monitor and control it from a phone, tablet or Windows laptop
 - Enforces each firm's daily loss, max loss, news and weekend rules, with safety buffers
 
