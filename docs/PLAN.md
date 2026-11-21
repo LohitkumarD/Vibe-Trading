@@ -47,6 +47,19 @@ There are community MCP servers for MetaTrader 5 (e.g. `metatrader-mcp-server`, 
 - **Not for live trading**: an AI deciding or sending orders is slow, can behave unpredictably, and may count as an external bridge or third-party tool under a firm's rules. The bot's risk rules must be deterministic.
 - **Possible later use (phase 5, demo first):** read-only questions from your phone such as "how is the account today?", plus weekly trade-log analysis. Unofficial projects, so they need a code review before use.
 
+## 2c. Reusing Lohit's existing app: `structure-smc-backtest`
+
+Lohit already has a mobile-first PWA (React + TypeScript, free Netlify hosting) that backtests an SMC/ICT market-structure strategy on Nifty/Sensex options via Dhan. It is research-only and places no orders. The 20 unit tests pass.
+
+| Part | Reuse? | How |
+|---|---|---|
+| Swings, BOS/CHoCH, Order Block, FVG logic (`structure.ts`, `zones.ts`, `indicators.ts`) | **Yes, as Strategy D** | Port the same causal rules to MQL5. The TS version stays the reference, so the two must give identical signals on the same candles. |
+| Backtest engine, metrics, "win rate vs breakeven" verdict | **Yes, adapted** | Swap option premiums for forex pips/lots, add spread and commission, and replay through the prop RuleProfile (daily/max loss). |
+| PWA shell (phone / tablet / laptop, Add to Home Screen), charts, trade log | **Yes, as the dashboard** | Becomes the free "Prop Lab": backtests on forex data plus a read-only status view of the bot. |
+| Dhan data fetch, Black-Scholes, option sizing | No (for forex) | Replace with forex candles exported from MT5 (CSV upload) or a free data API. |
+
+Hosting stays free: Netlify's free tier serves the PWA. The bot itself still runs in MT5 on the laptop or free VM (section 2a). The web app never places orders, which matches the rule that only the MQL5 EA trades.
+
 ## 3. Architecture
 
 ```
@@ -122,7 +135,9 @@ Requirements for any strategy: a stop on every trade, a holding time of minutes 
 | B | **Trend pullback** | EURUSD, GBPUSD, USDJPY, XAUUSD (if allowed); H1 with H4 filter | Trade in the direction of the H4 trend (EMA 50/200). Enter on a pullback to the H1 EMA 20/50 with a momentum confirmation. ATR stop, partial close at 1R, trail the rest. |
 | C | **Range mean-reversion** (later) | EURCHF, AUDNZD; Asian session | Fade Bollinger/RSI extremes only when a volatility filter says the market is ranging. Tight time stop. |
 
-We start with **A and B**. Strategies with low correlation smooth daily equity, which matters more for prop rules than raw return.
+| D | **SMC structure** (from Lohit's app) | EURUSD, GBPUSD, XAUUSD; M15/H1 | BOS/CHoCH with an ATR-sized displacement, then a retrace into the Order Block/FVG. Stop at the swept swing, target the next liquidity pool, and only take the trade if R:R ≥ 2. |
+
+We start with **A and B**, then test D using the rules already built in Lohit's app. Strategies with low correlation smooth daily equity, which matters more for prop rules than raw return.
 
 ### 6.1 How a strategy earns its place
 1. **Backtest** in the MT5 Strategy Tester with "Every tick based on real ticks", realistic commission and variable spread, over at least 5 years.
@@ -154,7 +169,7 @@ docs/                # this plan, laptop + free-VM setup guides, runbook
 | 2 | Strategy A (London breakout) + backtest report | Passes the 6.1 bar or is dropped |
 | 3 | Strategy B (trend pullback) + combined portfolio test | Monte Carlo breach probability under 5% |
 | 4 | Laptop setup guide + 4-week demo forward test on the laptop; Azure free VM guide ready | Live demo results match the backtest within reason |
-| 5 | Challenge attempt, and optionally a read-only web dashboard | Challenge passed without coming near a limit |
+| 5 | Challenge attempt + forex "Prop Lab" PWA adapted from `structure-smc-backtest` (backtests + read-only bot status) | Challenge passed without coming near a limit |
 
 ## 9. Important: India-specific legal note
 
