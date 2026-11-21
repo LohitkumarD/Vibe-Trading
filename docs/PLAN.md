@@ -164,8 +164,8 @@ docs/                # this plan, laptop + free-VM setup guides, runbook
 | Phase | Deliverable | Done when |
 |---|---|---|
 | 0 | Repo reset + this plan | PR merged |
-| 1 | **RiskGuard + RuleProfile + StateStore + Notifier** with a dummy strategy | Strategy Tester shows it flattening and locking at the internal limits, with the correct reset time per firm |
-| 2 | Strategy A (London breakout) + backtest report | Passes the 6.1 bar or is dropped |
+| 1 | **RiskGuard + RuleProfile + StateStore + Notifier** (v0.10 written, see docs/INSTALL.md) | Strategy Tester shows it flattening and locking at the internal limits, with the correct reset time per firm |
+| 2 | Strategy A (London breakout, v0.10 written) + backtest report | Passes the 6.1 bar or is dropped |
 | 3 | Strategy B (trend pullback) + combined portfolio test | Monte Carlo breach probability under 5% |
 | 4 | Laptop setup guide + 4-week demo forward test on the laptop; Azure free VM guide ready | Live demo results match the backtest within reason |
 | 5 | Challenge attempt + forex "Prop Lab" PWA adapted from `structure-smc-backtest` (backtests + read-only bot status) | Challenge passed without coming near a limit |
