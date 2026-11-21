@@ -27,8 +27,31 @@ struct GuardConfig
    int               serverGmtOffsetWinter; // only used in Strategy Tester
    bool              serverUsesUsDst;       // only used in Strategy Tester
    bool              flattenWholeAccount;   // on breach close ALL positions, not just ours
+   bool              researchMode;          // tester only: count challenges instead of locking
    long              magic;
   };
+
+//--- Research mode counters (Strategy Tester only)
+int    g_chPassed = 0;
+int    g_chFailed = 0;
+int    g_chDayLocks = 0;
+datetime g_chStart = 0;
+string g_chLog = "";
+
+bool ResearchOn() { return g_cfg.researchMode && MQLInfoInteger(MQL_TESTER); }
+
+//--- Treat the current balance as a brand-new challenge account
+void StartNewChallenge(string why)
+  {
+   double bal = AccountInfoDouble(ACCOUNT_BALANCE);
+   g_chLog += StringFormat("%s %s at balance %.2f\n", TimeToString(TimeCurrent(), TIME_DATE), why, bal);
+   PrintFormat("PropGuard research: %s. New challenge starts at %.2f", why, bal);
+   g_st.initialBalance = bal;
+   g_st.peakBalance = bal;
+   g_st.dayAnchor = MathMax(bal, AccountInfoDouble(ACCOUNT_EQUITY));
+   g_st.accountLocked = false;
+   g_chStart = TimeCurrent();
+  }
 
 GuardConfig g_cfg;
 GuardState  g_st;
@@ -170,6 +193,29 @@ double OpenRiskToStops()
       if(p < 0.0)
          risk += -p;
      }
+   // Pending orders count too: they can fill at any moment.
+   for(int i = OrdersTotal() - 1; i >= 0; i--)
+     {
+      ulong ticket = OrderGetTicket(i);
+      if(ticket == 0)
+         continue;
+      long typ = OrderGetInteger(ORDER_TYPE);
+      if(typ != ORDER_TYPE_BUY_LIMIT && typ != ORDER_TYPE_SELL_LIMIT &&
+         typ != ORDER_TYPE_BUY_STOP && typ != ORDER_TYPE_SELL_STOP)
+         continue;
+      string sym = OrderGetString(ORDER_SYMBOL);
+      double sl  = OrderGetDouble(ORDER_SL);
+      double vol = OrderGetDouble(ORDER_VOLUME_CURRENT);
+      double px  = OrderGetDouble(ORDER_PRICE_OPEN);
+      if(sl <= 0.0)
+         return -1.0;
+      double p = 0.0;
+      bool buy = (typ == ORDER_TYPE_BUY_LIMIT || typ == ORDER_TYPE_BUY_STOP);
+      if(!OrderCalcProfit(buy ? ORDER_TYPE_BUY : ORDER_TYPE_SELL, sym, vol, px, sl, p))
+         return -1.0;
+      if(p < 0.0)
+         risk += -p;
+     }
    return risk;
   }
 
@@ -235,6 +281,15 @@ bool GuardInit(const GuardConfig &cfg)
    if(g_st.peakBalance < g_st.initialBalance)
       g_st.peakBalance = g_st.initialBalance;
    long key = DayKeyOf(FirmClockNow());
+   if(MQLInfoInteger(MQL_TESTER))
+     {
+      // Every tester run starts clean.
+      ZeroMemory(g_st);
+      g_st.initialBalance = (cfg.initialBalance > 0.0) ? cfg.initialBalance : bal;
+      g_st.peakBalance = MathMax(bal, g_st.initialBalance);
+      had = false;
+     }
+   g_chStart = TimeCurrent();
    if(!had || g_st.dayKey != key)
       StartNewDay(key);
    SaveState(g_st);
@@ -261,15 +316,29 @@ bool GuardUpdate()
    if(eq < g_st.dayLowEquity)
       g_st.dayLowEquity = eq;
 
+   if(ResearchOn() && g_cfg.rules.profitTargetPct > 0 && PositionsTotal() == 0 &&
+      bal >= g_st.initialBalance * (1.0 + g_cfg.rules.profitTargetPct / 100.0))
+     {
+      g_chPassed++;
+      StartNewChallenge(StringFormat("PASSED (+%.1f%% in %d days)", g_cfg.rules.profitTargetPct,
+                                     (int)((TimeCurrent() - g_chStart) / 86400)));
+     }
+
    if(!g_st.accountLocked && eq <= OwnMaxFloor())
      {
       g_st.accountLocked = true;
       SaveState(g_st);
       FlattenAll(StringFormat("max-loss guard hit, equity %.2f <= %.2f. EA locked until you reset it.", eq, OwnMaxFloor()));
+      if(ResearchOn())
+        {
+         g_chFailed++;
+         StartNewChallenge("FAILED (max-loss guard)");
+        }
      }
    else if(!g_st.dayLocked && eq <= OwnDailyFloor())
      {
       g_st.dayLocked = true;
+      g_chDayLocks++;
       SaveState(g_st);
       FlattenAll(StringFormat("daily guard hit, equity %.2f <= %.2f. Done until the next reset.", eq, OwnDailyFloor()));
      }
@@ -339,6 +408,13 @@ void GuardResetAccountLock()
   }
 
 double GuardInitialBalance() { return g_st.initialBalance; }
+
+string GuardResearchSummary()
+  {
+   return StringFormat("Challenges passed: %d, failed: %d, days stopped by daily guard: %d\n%s",
+                       g_chPassed, g_chFailed, g_chDayLocks, g_chLog);
+  }
+double GuardResearchScore() { return g_chPassed - g_chFailed; }
 string GuardStatus()         { return g_guardStatus; }
 //+------------------------------------------------------------------+
 #endif

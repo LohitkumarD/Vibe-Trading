@@ -14,8 +14,14 @@ struct TradeSignal
    int               dir;      // +1 buy, -1 sell
    double            sl;
    double            tp;
+   double            entry;    // 0 = market now, >0 = limit order at this price
    string            tag;
   };
+
+void ClearSignal(TradeSignal &s)
+  {
+   s.valid = false; s.dir = 0; s.sl = 0; s.tp = 0; s.entry = 0; s.tag = "";
+  }
 
 CTrade g_exec;
 
@@ -56,6 +62,15 @@ bool ExecuteSignal(const TradeSignal &s, string sym, double riskPct, double maxL
       return false;
      }
    double entry = (s.dir > 0) ? ask : bid;
+   bool useLimit = false;
+   if(s.entry > 0)
+     {
+      double lim = NormalizeDouble(s.entry, digits);
+      long lvl = SymbolInfoInteger(sym, SYMBOL_TRADE_STOPS_LEVEL);
+      // A limit only makes sense if price has not reached it yet
+      if((s.dir > 0 && ask - lim > lvl * point) || (s.dir < 0 && lim - bid > lvl * point))
+        { entry = lim; useLimit = true; }
+     }
    double sl = NormalizeDouble(s.sl, digits);
    double tp = NormalizeDouble(s.tp, digits);
    if(sl <= 0 || (s.dir > 0 && sl >= entry) || (s.dir < 0 && sl <= entry))
@@ -94,13 +109,18 @@ bool ExecuteSignal(const TradeSignal &s, string sym, double riskPct, double maxL
 
    g_exec.SetExpertMagicNumber(magic);
    g_exec.SetDeviationInPoints(deviationPts);
-   bool ok = (s.dir > 0) ? g_exec.Buy(lots, sym, 0.0, sl, tp, s.tag)
-                         : g_exec.Sell(lots, sym, 0.0, sl, tp, s.tag);
+   bool ok;
+   if(useLimit)
+      ok = (s.dir > 0) ? g_exec.BuyLimit(lots, entry, sym, sl, tp, ORDER_TIME_GTC, 0, s.tag)
+                       : g_exec.SellLimit(lots, entry, sym, sl, tp, ORDER_TIME_GTC, 0, s.tag);
+   else
+      ok = (s.dir > 0) ? g_exec.Buy(lots, sym, 0.0, sl, tp, s.tag)
+                       : g_exec.Sell(lots, sym, 0.0, sl, tp, s.tag);
    if(ok && (g_exec.ResultRetcode() == TRADE_RETCODE_DONE || g_exec.ResultRetcode() == TRADE_RETCODE_PLACED))
      {
       GuardOnEntry();
-      Notify(StringFormat("%s %s %.2f lots, SL %s, TP %s, risk %.2f",
-                          s.dir > 0 ? "BUY" : "SELL", s.tag, lots,
+      Notify(StringFormat("%s%s %s %.2f lots, SL %s, TP %s, risk %.2f",
+                          s.dir > 0 ? "BUY" : "SELL", useLimit ? " LIMIT" : "", s.tag, lots,
                           DoubleToString(sl, digits), DoubleToString(tp, digits), realRisk));
       return true;
      }
@@ -120,6 +140,63 @@ int CountOwnPositions(string sym, long magic)
          n++;
      }
    return n;
+  }
+
+int CountOwnOrders(string sym, long magic)
+  {
+   int n = 0;
+   for(int i = OrdersTotal() - 1; i >= 0; i--)
+     {
+      ulong t = OrderGetTicket(i);
+      if(t == 0)
+         continue;
+      if(OrderGetInteger(ORDER_MAGIC) == magic && OrderGetString(ORDER_SYMBOL) == sym)
+         n++;
+     }
+   return n;
+  }
+
+//--- Busy = we already have a trade or a waiting order on this symbol
+bool SymbolBusy(string sym, long magic)
+  {
+   return CountOwnPositions(sym, magic) + CountOwnOrders(sym, magic) > 0;
+  }
+
+//--- Delete our pending orders whose comment starts with `prefix` and are older than maxAgeSec
+void ExpireOwnOrders(string sym, long magic, string prefix, int maxAgeSec)
+  {
+   g_exec.SetExpertMagicNumber(magic);
+   for(int i = OrdersTotal() - 1; i >= 0; i--)
+     {
+      ulong t = OrderGetTicket(i);
+      if(t == 0)
+         continue;
+      if(OrderGetInteger(ORDER_MAGIC) != magic || OrderGetString(ORDER_SYMBOL) != sym)
+         continue;
+      if(StringFind(OrderGetString(ORDER_COMMENT), prefix) != 0)
+         continue;
+      if(TimeCurrent() - (datetime)OrderGetInteger(ORDER_TIME_SETUP) >= maxAgeSec)
+         g_exec.OrderDelete(t);
+     }
+  }
+
+//--- Close our positions (by comment prefix) held longer than maxAgeSec
+void TimeStopOwn(string sym, long magic, string prefix, int maxAgeSec, string why)
+  {
+   g_exec.SetExpertMagicNumber(magic);
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+     {
+      ulong t = PositionGetTicket(i);
+      if(t == 0 || !PositionSelectByTicket(t))
+         continue;
+      if(PositionGetInteger(POSITION_MAGIC) != magic || PositionGetString(POSITION_SYMBOL) != sym)
+         continue;
+      if(StringFind(PositionGetString(POSITION_COMMENT), prefix) != 0)
+         continue;
+      if(TimeCurrent() - (datetime)PositionGetInteger(POSITION_TIME) >= maxAgeSec)
+         if(g_exec.PositionClose(t))
+            Notify("closed " + sym + ": " + why);
+     }
   }
 
 void CloseOwnPositions(string sym, long magic, string why)

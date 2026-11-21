@@ -28,12 +28,14 @@ struct LbConfig
    double            maxRangeAtr;      // range <= this x ATR(D1)
    double            bufferFrac;       // breakout buffer as fraction of range
    double            rr;               // target in R
+   bool              trendFilter;      // only break in the direction of the H4 EMA200
   };
 
 struct LbSymbolState
   {
    string            sym;
    int               atrHandle;
+   int               emaHandle;
    datetime          lastBar;
    datetime          day;
    bool              rangeReady;
@@ -56,11 +58,12 @@ bool LbInit(const LbConfig &cfg, string &symbols[])
      {
       g_lbs[i].sym = symbols[i];
       g_lbs[i].atrHandle = iATR(symbols[i], PERIOD_D1, 14);
+      g_lbs[i].emaHandle = iMA(symbols[i], PERIOD_H4, 200, 0, MODE_EMA, PRICE_CLOSE);
       g_lbs[i].lastBar = 0;
       g_lbs[i].day = 0;
       g_lbs[i].rangeReady = false;
       g_lbs[i].dayDone = false;
-      if(g_lbs[i].atrHandle == INVALID_HANDLE)
+      if(g_lbs[i].atrHandle == INVALID_HANDLE || g_lbs[i].emaHandle == INVALID_HANDLE)
         {
          PrintFormat("LondonBreakout: cannot create ATR for %s", symbols[i]);
          return false;
@@ -72,8 +75,12 @@ bool LbInit(const LbConfig &cfg, string &symbols[])
 void LbDeinit()
   {
    for(int i = 0; i < ArraySize(g_lbs); i++)
+     {
       if(g_lbs[i].atrHandle != INVALID_HANDLE)
          IndicatorRelease(g_lbs[i].atrHandle);
+      if(g_lbs[i].emaHandle != INVALID_HANDLE)
+         IndicatorRelease(g_lbs[i].emaHandle);
+     }
   }
 
 bool LbBuildRange(LbSymbolState &st, datetime day)
@@ -107,7 +114,7 @@ bool LbBuildRange(LbSymbolState &st, datetime day)
 //--- Run on every tick/timer for each symbol. Returns true when a signal fires.
 bool LbCheck(int idx, long magic, TradeSignal &s)
   {
-   s.valid = false; s.dir = 0; s.sl = 0; s.tp = 0; s.tag = "";
+   ClearSignal(s);
    LbSymbolState st = g_lbs[idx];
    string sym = st.sym;
 
@@ -122,8 +129,8 @@ bool LbCheck(int idx, long magic, TradeSignal &s)
    MqlDateTime t; TimeToStruct(now, t);
 
    // Time stop
-   if(t.hour >= g_lb.exitHour && CountOwnPositions(sym, magic) > 0)
-      CloseOwnPositions(sym, magic, "end-of-day time stop");
+   if(t.hour >= g_lb.exitHour)
+      TimeStopOwn(sym, magic, "LB", 0, "end-of-day time stop");
 
    // Only act once per closed M15 bar
    datetime bar = iTime(sym, PERIOD_M15, 0);
@@ -143,7 +150,7 @@ bool LbCheck(int idx, long magic, TradeSignal &s)
         { g_lbs[idx] = st; return s.valid; }
      }
 
-   if(CountOwnPositions(sym, magic) > 0)
+   if(SymbolBusy(sym, magic))
      { g_lbs[idx] = st; return s.valid; }
 
    double close1 = iClose(sym, PERIOD_M15, 1);
@@ -162,6 +169,18 @@ bool LbCheck(int idx, long magic, TradeSignal &s)
       s.sl = st.hi + buf;
       double entry = SymbolInfoDouble(sym, SYMBOL_BID);
       s.tp = entry - (s.sl - entry) * g_lb.rr;
+     }
+   if(s.dir != 0 && g_lb.trendFilter)
+     {
+      double ema[];
+      double c4 = iClose(sym, PERIOD_H4, 1);
+      if(CopyBuffer(st.emaHandle, 0, 1, 1, ema) != 1 || c4 <= 0)
+         s.dir = 0;
+      else if((s.dir > 0 && c4 < ema[0]) || (s.dir < 0 && c4 > ema[0]))
+        {
+         st.dayDone = true;   // breakout against the H4 trend: skip the day
+         s.dir = 0;
+        }
      }
    if(s.dir != 0)
      {
