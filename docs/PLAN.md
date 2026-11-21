@@ -134,7 +134,6 @@ Requirements for any strategy: a stop on every trade, a holding time of minutes 
 | A | **London session breakout** | EURUSD, GBPUSD; M15; London open | Mark the Asian-session range. Trade a confirmed break with the stop on the other side of the range or an ATR-based stop, 1.5–2R target, one trade per pair per day. |
 | B | **Trend pullback** | EURUSD, GBPUSD, USDJPY, XAUUSD (if allowed); H1 with H4 filter | Trade in the direction of the H4 trend (EMA 50/200). Enter on a pullback to the H1 EMA 20/50 with a momentum confirmation. ATR stop, partial close at 1R, trail the rest. |
 | C | **Range mean-reversion** (later) | EURCHF, AUDNZD; Asian session | Fade Bollinger/RSI extremes only when a volatility filter says the market is ranging. Tight time stop. |
-
 | D | **SMC structure** (from Lohit's app) | EURUSD, GBPUSD, XAUUSD; M15/H1 | BOS/CHoCH with an ATR-sized displacement, then a retrace into the Order Block/FVG. Stop at the swept swing, target the next liquidity pool, and only take the trade if R:R ≥ 2. |
 
 We start with **A and B**, then test D using the rules already built in Lohit's app. Strategies with low correlation smooth daily equity, which matters more for prop rules than raw return.
