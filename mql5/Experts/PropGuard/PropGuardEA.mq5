@@ -5,7 +5,7 @@
 //| every symbol listed in "Symbols".                                |
 //+------------------------------------------------------------------+
 #property copyright "Vibe Trading"
-#property version   "0.10"
+#property version   "1.00"
 #property description "Prop-firm risk guard + London breakout (Strategy A). Demo-test first."
 
 #include <PropGuard/RiskGuard.mqh>
@@ -15,7 +15,7 @@
 
 //--- Prop firm
 input group "Prop firm rules (verify on the firm's site!)"
-input ENUM_PROP_FIRM   InpFirm            = FIRM_FTMO_2STEP; // Firm / challenge preset
+input ENUM_PROP_FIRM   InpFirm            = FIRM_FUNDEDNEXT_2STEP; // Firm / challenge preset
 input double           InpInitialBalance  = 0;     // Account starting balance (0 = current balance on first run)
 input double           InpCustomDailyPct  = 5.0;   // Custom: daily loss %
 input double           InpCustomMaxPct    = 10.0;  // Custom: max loss %
@@ -80,7 +80,7 @@ void DrawPanel()
    MakeButton(BTN_PAUSE, GuardPaused() ? "RESUME" : "PAUSE", 150, 30,
               GuardPaused() ? clrSeaGreen : clrDarkOrange);
    MakeButton(BTN_FLAT, "CLOSE ALL + PAUSE", 150, 64, clrFireBrick);
-   Comment("PropGuard v0.10\n", GuardStatus());
+   Comment("PropGuard v1.00\n", GuardStatus());
   }
 
 //+------------------------------------------------------------------+

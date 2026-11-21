@@ -1,6 +1,6 @@
 # Install PropGuard EA on your laptop (MT5 demo / free trial)
 
-Version 0.10: risk engine + Strategy A (London breakout). **Use a demo or free-trial account only** until it has passed the 4-week forward test in PLAN.md.
+Version 1.00: risk engine + Strategy A (London breakout). **Use a demo or free-trial account only** until it has passed the 4-week forward test in PLAN.md.
 
 ## 1. Copy the files into MT5
 
@@ -40,7 +40,7 @@ On the toolbar, the **Algo Trading** button must be green.
 
 | Input | What to set |
 |---|---|
-| Firm / challenge preset | The firm you're simulating (FTMO 2-Step by default) |
+| Firm / challenge preset | Default **FundedNext Stellar 2-Step** (5% daily / 10% max, resets at server midnight). Pick 1-Step if your trial is 1-Step |
 | Account starting balance | The account size, e.g. `100000` for a 100K trial. `0` = current balance |
 | Symbols | Exact names from Market Watch. Some brokers add a suffix, e.g. `EURUSD.r` |
 | Risk per trade | Default 0.40%. Keep it at or below 0.5% |
@@ -55,7 +55,7 @@ On the toolbar, the **Algo Trading** button must be green.
 - **Windows Update → Advanced → Active hours**: 10:00–23:59. Pause updates during a challenge.
 - Optional: put an MT5 shortcut in `shell:startup` so it opens after a restart. The EA restores its state from `MQL5\Files\PropGuard_<login>.txt`.
 
-## 6. What it does (v0.10)
+## 6. What it does (v1.00)
 - Watches equity every second. Stops for the day at **60% of the firm's daily loss limit** and locks the account at **70% of the max loss limit**. On a breach it closes everything.
 - Refuses a new trade if equity minus all open stop-losses minus the new trade's risk would cross that line.
 - Max 3 trades and 2 losses per day. No entries in the 30 minutes before the firm's daily reset, or 15 minutes around high-impact news.
@@ -63,5 +63,33 @@ On the toolbar, the **Algo Trading** button must be green.
 - If you close a trade by hand (phone, PC or web), it pauses until the next daily reset.
 - Sends push alerts to your phone for entries, exits, pauses and breaches.
 
-## 7. Backtest it (Strategy Tester)
-**View → Strategy Tester** (Ctrl+R), then: Expert = `PropGuard\PropGuardEA`, symbol EURUSD, timeframe M15, **Modelling: Every tick based on real ticks**, dates: the last 2+ years, deposit 100000. The news filter is off in the tester, because MT5's calendar isn't available there. Send the report (or a screenshot of the results and graph) to Claude.
+## 7. Weekend backtest (Strategy Tester)
+
+The market is closed at the weekend, but the tester works on downloaded history, so this is the right time to run it.
+
+1. **View → Strategy Tester** (Ctrl+R). On the **Settings** tab:
+
+| Field | Value |
+|---|---|
+| Expert | `PropGuard\PropGuardEA.ex5` |
+| Symbol | EURUSD (the chart symbol only; the EA trades every symbol in its *Symbols* input) |
+| Timeframe | M15 |
+| Date | Custom period: **2024.01.01 → 2026.11.20** |
+| Forward | No |
+| Delays | Random delay |
+| Modelling | **Every tick based on real ticks**. If it's very slow or says real ticks are missing, use **1 minute OHLC** |
+| Deposit / Leverage | 100000 USD, 1:100 |
+| Optimization | Disabled |
+| Visual mode | Off |
+
+2. **Inputs** tab: set *Account starting balance* = `100000`, keep *Firm* = FundedNext Stellar 2-Step, *Server GMT offset in winter* = `2`, *Server shifts with US DST* = `true`. Leave everything else at the defaults.
+3. Click **Start**. The first run downloads history, which can take 10–30 minutes.
+4. Run it **three times**, changing only *Symbols*: `EURUSD`, then `GBPUSD`, then `EURUSD,GBPUSD`.
+5. For each run, send Claude:
+   - a screenshot of the **Backtest** tab (the numbers) and the **Graph** tab,
+   - or right-click the Backtest tab → **Report → HTML** and upload the file,
+   - plus any **Journal** lines containing `FLATTENED` or `daily guard`.
+
+What Claude will check: profit factor, max drawdown, the worst single day versus the 5% daily rule, number of trades, and whether the guard ever had to step in.
+
+The news filter is off in the tester, because MT5's calendar isn't available there.
