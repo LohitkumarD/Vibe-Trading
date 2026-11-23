@@ -372,6 +372,17 @@ bool GuardCanOpen(double riskMoney, string &reason)
    double worst = AccountInfoDouble(ACCOUNT_EQUITY) - open - riskMoney;
    if(worst <= OwnFloor())
      {
+      // Research mode: flat, and even one trade would breach the max-loss guard.
+      // A real challenge is effectively over here, so count it as a fail and
+      // start a new one instead of sitting idle for the rest of the test.
+      if(ResearchOn() && open == 0.0 && OrdersTotal() == 0 &&
+         AccountInfoDouble(ACCOUNT_EQUITY) - riskMoney <= OwnMaxFloor())
+        {
+         g_chFailed++;
+         StartNewChallenge("FAILED (stalled: no room left above the max-loss guard)");
+         reason = "challenge restarted";
+         return false;
+        }
       reason = StringFormat("worst case %.2f would cross our floor %.2f", worst, OwnFloor());
       return false;
      }

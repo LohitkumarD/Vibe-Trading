@@ -5,7 +5,7 @@
 //| every symbol listed in "Symbols".                                |
 //+------------------------------------------------------------------+
 #property copyright "Vibe Trading"
-#property version   "1.10"
+#property version   "1.11"
 #property description "Prop-firm risk guard + strategies A (London breakout), B (trend pullback), D (SMC structure). Demo-test first."
 
 #include <PropGuard/RiskGuard.mqh>
@@ -29,8 +29,8 @@ input double           InpCustomTargetPct = 10.0;  // Custom: profit target % (0
 input group "Safety buffers"
 input double InpDailyUseFrac   = 0.60; // Stop at this share of the firm's DAILY limit
 input double InpMaxUseFrac     = 0.70; // Stop at this share of the firm's MAX limit
-input double InpRiskPct        = 0.40; // Risk per trade, % of starting balance
-input double InpMaxLots        = 5.0;  // Hard cap on lots per trade
+input double InpRiskPct        = 1.00; // Risk per trade, % of starting balance (1.0 = backtested setting)
+input double InpMaxLots        = 20.0; // Hard cap on lots per trade (check your firm allows this size)
 input int    InpMaxTradesDay   = 3;    // Max new trades per day
 input int    InpMaxLossesDay   = 2;    // Stop for the day after this many losses
 input int    InpNoEntryBeforeResetMin = 30; // No entries this close to the daily reset (min)
@@ -41,9 +41,9 @@ input bool   InpFlattenWholeAccount = true; // On a breach close ALL positions, 
 input bool   InpClearMaxLossLock = false;   // Set true once to clear a max-loss lock
 
 input group "Which strategies"
-input string InpSymbols        = "EURUSD,GBPUSD"; // Symbols (comma separated, as in Market Watch)
+input string InpSymbols        = "EURUSD,GBPUSD,USDJPY,AUDUSD,USDCAD,USDCHF"; // Symbols (comma separated, as in Market Watch)
 input bool   InpUseA           = false; // A: London breakout
-input bool   InpUseB           = true;  // B: H4/H1 trend pullback
+input bool   InpUseB           = false; // B: H4/H1 trend pullback (loses in backtests, off by default)
 input bool   InpUseD           = true;  // D: SMC structure (BOS/CHoCH + Order Block)
 
 input group "Strategy A: London breakout (server time)"
@@ -65,6 +65,7 @@ input int    InpTpMaxHoldHours = 72;   // Time stop (hours)
 
 input group "Strategy D: SMC structure"
 input ENUM_TIMEFRAMES InpSmcTf = PERIOD_H1; // Timeframe
+input int    InpSmcTfPick      = 0;    // Tester shortcut: 0 use Timeframe above, 1 M15, 2 M30, 3 H1, 4 H4
 input int    InpSmcSwing       = 2;    // Swing length N
 input bool   InpSmcCloseConfirm = true; // Break confirmed by close (false = wick)
 input int    InpSmcSignal      = 0;    // 0 both, 1 BOS only, 2 CHoCH only
@@ -74,7 +75,7 @@ input bool   InpSmcWickBounds  = false; // OB bounds: true wick, false body
 input double InpSmcFvgMinAtr   = 0.0;  // FVG min size x ATR
 input int    InpSmcMaxRetrace  = 10;   // Limit order valid for N bars
 input double InpSmcStopBufAtr  = 0.1;  // Stop buffer x ATR
-input double InpSmcRR          = 2.0;  // Min R:R (and fallback target)
+input double InpSmcRR          = 1.5;  // Min R:R (and fallback target)
 input int    InpSmcMaxBars     = 20;   // Time stop (bars)
 input int    InpSmcStartHour   = 9;    // Signals from this server hour
 input int    InpSmcEndHour     = 20;   // No signals from this server hour
@@ -111,7 +112,7 @@ void DrawPanel()
    MakeButton(BTN_PAUSE, GuardPaused() ? "RESUME" : "PAUSE", 150, 30,
               GuardPaused() ? clrSeaGreen : clrDarkOrange);
    MakeButton(BTN_FLAT, "CLOSE ALL + PAUSE", 150, 64, clrFireBrick);
-   Comment("PropGuard v1.10\n", GuardStatus());
+   Comment("PropGuard v1.11\n", GuardStatus());
   }
 
 //+------------------------------------------------------------------+
@@ -185,7 +186,7 @@ int OnInit()
       return INIT_FAILED;
 
    SmcConfig sc;
-   sc.tf = InpSmcTf;
+   sc.tf = InpSmcTfPick == 1 ? PERIOD_M15 : InpSmcTfPick == 2 ? PERIOD_M30 : InpSmcTfPick == 3 ? PERIOD_H1 : InpSmcTfPick == 4 ? PERIOD_H4 : InpSmcTf;
    sc.swingLen = InpSmcSwing;
    sc.closeConfirm = InpSmcCloseConfirm;
    sc.signalType = InpSmcSignal;
