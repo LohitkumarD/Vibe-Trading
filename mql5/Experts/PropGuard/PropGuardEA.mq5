@@ -5,8 +5,8 @@
 //| every symbol listed in "Symbols".                                |
 //+------------------------------------------------------------------+
 #property copyright "Vibe Trading"
-#property version   "1.11"
-#property description "Prop-firm risk guard + strategies A (London breakout), B (trend pullback), D (SMC structure). Demo-test first."
+#property version   "2.00"
+#property description "Prop-firm risk guard + D (SMC, H1) + Lab: 7 intraday M1/M5 strategies that learn from their own results. Demo/free trial first."
 
 #include <PropGuard/RiskGuard.mqh>
 #include <PropGuard/Executor.mqh>
@@ -14,6 +14,7 @@
 #include <PropGuard/Strategies/LondonBreakout.mqh>
 #include <PropGuard/Strategies/TrendPullback.mqh>
 #include <PropGuard/Strategies/SmcStructure.mqh>
+#include <PropGuard/Lab/LabStrategies.mqh>
 
 //--- Prop firm
 input group "Prop firm rules (verify on the firm's site!)"
@@ -31,8 +32,8 @@ input double InpDailyUseFrac   = 0.60; // Stop at this share of the firm's DAILY
 input double InpMaxUseFrac     = 0.70; // Stop at this share of the firm's MAX limit
 input double InpRiskPct        = 1.00; // Risk per trade, % of starting balance (1.0 = backtested setting)
 input double InpMaxLots        = 20.0; // Hard cap on lots per trade (check your firm allows this size)
-input int    InpMaxTradesDay   = 3;    // Max new trades per day
-input int    InpMaxLossesDay   = 2;    // Stop for the day after this many losses
+input int    InpMaxTradesDay   = 12;   // Max new trades per day (all strategies)
+input int    InpMaxLossesDay   = 6;    // Stop for the day after this many losses
 input int    InpNoEntryBeforeResetMin = 30; // No entries this close to the daily reset (min)
 input int    InpNewsWindowMin  = 15;   // No entries +/- minutes around high-impact news (0 = off)
 input int    InpFridayFlatHour = 21;   // Close all & stop on Friday from this server hour (24 = never)
@@ -45,6 +46,28 @@ input string InpSymbols        = "EURUSD,GBPUSD,USDJPY,AUDUSD,USDCAD,USDCHF"; //
 input bool   InpUseA           = false; // A: London breakout
 input bool   InpUseB           = false; // B: H4/H1 trend pullback (loses in backtests, off by default)
 input bool   InpUseD           = true;  // D: SMC structure (BOS/CHoCH + Order Block)
+
+input group "Lab: intraday M1/M5 strategies that learn"
+input bool   InpUseLab         = true;  // Run the Lab strategies (L0-L6)
+input string InpLabEnabled     = "1111111"; // L0..L6 on/off (1/0): ORB-Ldn, ORB-NY, VWAP, Asia-BB, EMA-pullback, Asia-sweep, M1-scalp
+input double InpLabRiskTrial   = 0.25;  // Risk % per trade while a strategy is on TRIAL
+input double InpLabRiskActive  = 0.50;  // Risk % per trade once a strategy is ACTIVE (proven)
+input int    InpLabMinTrades   = 10;    // Results needed before promoting/benching
+input double InpLabPromotePf   = 1.30;  // Promote when profit factor >= this ...
+input double InpLabPromoteExpR = 0.10;  // ... and average result >= this many R
+input double InpLabBenchPf     = 0.80;  // Bench (paper only) when profit factor < this
+input int    InpLabBenchLosses = 5;     // Bench after this many live losses in a row
+input int    InpLabMaxOpen     = 3;     // Max Lab trades open at once (one per symbol)
+input int    InpLabMaxPerDay   = 3;     // Max signals per strategy per symbol per day
+input double InpLabCommPerLot  = 7.0;   // Commission per lot round turn (for paper trades)
+input double InpLabMinStopSpreads = 4.0; // Stop must be at least this many spreads away
+input double InpLabMaxSpreadPts = 20;   // Lab: skip if spread is above this (points)
+input long   InpLabMagicBase   = 26112300; // Lab magic numbers = this + 0..6
+input int    InpLabLondonOpen  = 10;    // London open, server hour
+input int    InpLabNyOpenHour  = 16;    // New York stock open, server hour
+input int    InpLabNyOpenMin   = 30;    // New York stock open, minute
+input int    InpLabAsiaStart   = 3;     // Asian range start, server hour
+input int    InpLabAsiaEnd     = 9;     // Asian range end, server hour
 
 input group "Strategy A: London breakout (server time)"
 input int    InpRangeStartHour = 3;    // Asian range start hour
@@ -112,7 +135,7 @@ void DrawPanel()
    MakeButton(BTN_PAUSE, GuardPaused() ? "RESUME" : "PAUSE", 150, 30,
               GuardPaused() ? clrSeaGreen : clrDarkOrange);
    MakeButton(BTN_FLAT, "CLOSE ALL + PAUSE", 150, 64, clrFireBrick);
-   Comment("PropGuard v1.11\n", GuardStatus());
+   Comment("PropGuard v2.00\n", GuardStatus(), "\n", InpUseLab ? LabPanel() : "");
   }
 
 //+------------------------------------------------------------------+
@@ -204,7 +227,42 @@ int OnInit()
    if(InpUseD && !SmcInit(sc, g_syms))
       return INIT_FAILED;
 
-   if(!InpUseA && !InpUseB && !InpUseD)
+   if(InpUseLab)
+     {
+      LabConfig lab;
+      lab.enabled = InpLabEnabled;
+      lab.riskProbation = MathMax(0.01, MathMin(1.0, InpLabRiskTrial));
+      lab.riskActive = MathMax(0.01, MathMin(1.0, InpLabRiskActive));
+      lab.minTrades = MathMax(3, InpLabMinTrades);
+      lab.promotePf = InpLabPromotePf;
+      lab.promoteExpR = InpLabPromoteExpR;
+      lab.benchPf = InpLabBenchPf;
+      lab.benchConsecLoss = MathMax(2, InpLabBenchLosses);
+      lab.maxOpen = MathMax(1, InpLabMaxOpen);
+      lab.maxPerDay = MathMax(1, InpLabMaxPerDay);
+      lab.commPerLot = InpLabCommPerLot;
+      lab.minStopSpreads = InpLabMinStopSpreads;
+      lab.maxLots = InpMaxLots;
+      lab.maxSpreadPts = InpLabMaxSpreadPts;
+      lab.magicBase = InpLabMagicBase;
+      lab.deviationPts = InpDeviationPts;
+      lab.newsWindowMin = InpNewsWindowMin;
+      LabHours lh;
+      lh.londonOpen = InpLabLondonOpen;
+      lh.nyOpenHour = InpLabNyOpenHour;
+      lh.nyOpenMin = InpLabNyOpenMin;
+      lh.asiaStart = InpLabAsiaStart;
+      lh.asiaEnd = InpLabAsiaEnd;
+      if(InpLabMagicBase == InpMagic)
+        {
+         Print("PropGuard: Lab magic base must differ from the main magic number");
+         return INIT_PARAMETERS_INCORRECT;
+        }
+      if(!LabInit(lab, lh, g_syms))
+         return INIT_FAILED;
+     }
+
+   if(!InpUseA && !InpUseB && !InpUseD && !InpUseLab)
      {
       Print("PropGuard: turn on at least one strategy");
       return INIT_PARAMETERS_INCORRECT;
@@ -222,6 +280,7 @@ void OnDeinit(const int reason)
    EventKillTimer();
    if(InpUseA) LbDeinit();
    if(InpUseB) TpDeinit();
+   if(InpUseLab) LabDeinit();
    ObjectDelete(0, BTN_PAUSE);
    ObjectDelete(0, BTN_FLAT);
    Comment("");
@@ -246,8 +305,12 @@ void RunOnce()
    if(FridayFlat())
      {
       for(int i = 0; i < ArraySize(g_syms); i++)
+        {
          if(CountOwnPositions(g_syms[i], InpMagic) > 0)
             CloseOwnPositions(g_syms[i], InpMagic, "Friday flat before weekend");
+         if(InpUseLab && LabLiveOpenCount(g_syms[i]) > 0)
+            LabCloseAll(g_syms[i], "Friday flat before weekend");
+        }
       active = false;
      }
 
@@ -262,6 +325,8 @@ void RunOnce()
       if(InpUseA && LbCheck(i, InpMagic, s))
          TrySignal(s, g_syms[i], active);
      }
+   if(InpUseLab)
+      LabRun(active);
    DrawPanel();
   }
 
@@ -317,11 +382,15 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
                + HistoryDealGetDouble(trans.deal, DEAL_COMMISSION);
 
    bool manual = (reason == DEAL_REASON_CLIENT || reason == DEAL_REASON_MOBILE || reason == DEAL_REASON_WEB);
-   if(magic == InpMagic || (manual && IsOurSymbol(sym)))
+   bool lab = InpUseLab && LabIsMagic(magic);
+   if(magic == InpMagic || lab || (manual && IsOurSymbol(sym)))
      {
       GuardOnExit(net);
-      Notify(StringFormat("closed %s, result %.2f", sym, net));
+      if(!lab)
+         Notify(StringFormat("closed %s, result %.2f", sym, net));
      }
+   if(lab)
+      LabOnExitDeal(trans.deal);   // scores the trade in R and may promote/bench the strategy
    // You closed a trade by hand (phone/PC/web): respect that and stop for today.
    if(manual && IsOurSymbol(sym) && !GuardPaused())
       GuardSetPaused(true, "manual close detected on " + sym + ", paused until the next daily reset");
